@@ -1,57 +1,57 @@
-#define ARRAY_LENGTH(x) (sizeof(x) / sizeof((x)[0]))
-
 // 型定義
 typedef unsigned char u1;
 
-// Pin番号
-const u1 button[3] = {2, 3, 4};
+#define ARRAY_LENGTH(x) (sizeof(x) / sizeof((x)[0]))
+
+// ボタンとLEDのピン
+const u1 button[3] = {2, 3, 4}; //D2~D4
 const u1 led[3] = {10, 11, 12};
+const u1 maruButton = 6;
+const u1 batsuButton = 7;
 const u1 outputPin = 9;
-const u1 maruButton = 13;
-const u1 batsuButton = 14;
 
 const u1 buttonCount = ARRAY_LENGTH(button);
 const u1 ledCount = ARRAY_LENGTH(led);
 
-// ボタン押下時に電圧が下がるため、BUTTON_ONが0でBUTTON_OFFが1とする
 const u1 BUTTON_ON = 0;
 const u1 BUTTON_OFF = 1;
 
-u1 buttonFlag = BUTTON_OFF;
+volatile u1 buttonFlag = BUTTON_OFF;
+volatile u1 pressedButtonIndex = 255;
+
+// 現在のピン状態を保存
+volatile u1 prevButtonState = 0xFF;
 
 void setup() {
-  // 回答者のボタン初期化
-  for (u1 b = 0; b < buttonCount; b++) {
-    pinMode(button[b], INPUT);
-    pinMode(led[b], OUTPUT);
+  // 各ピンのモード設定
+  for (u1 i = 0; i < buttonCount; i++) {
+    pinMode(button[i], INPUT);
+    pinMode(led[i], OUTPUT);
   }
-  
-  // 出題者のボタン初期化
   pinMode(maruButton, INPUT);
   pinMode(batsuButton, INPUT);
-
   pinMode(outputPin, OUTPUT);
   digitalWrite(outputPin, HIGH);
 
   LedInit();
 
-  // outputPinのHIGHが安定するまでdelayする
+  // ピンチェンジ割り込み有効化
+  PCICR |= (1 << PCIE2);         // PCINT16-23 (D0～D7) グループを有効に
+  PCMSK2 |= (1 << PCINT18);      // D2
+  PCMSK2 |= (1 << PCINT19);      // D3
+  PCMSK2 |= (1 << PCINT20);      // D4
+
+  // 安定待ち
   delay(100);
 }
 
 void loop() {
-  if (buttonFlag == BUTTON_OFF){
-    for (u1 buttonNum = 0; buttonNum < buttonCount; buttonNum++) {
-      u1 buttonState = digitalRead(button[buttonNum]);
-
-      if (buttonState == BUTTON_ON) {
-        LedOn(buttonNum);
-      }
-    }
+  if (buttonFlag == BUTTON_OFF && pressedButtonIndex < buttonCount) {
+    LedOn(pressedButtonIndex);
   }
-  else {
-    if (digitalRead(maruButton) == BUTTON_ON ||
-        digitalRead(batsuButton) == BUTTON_ON){
+
+  if (buttonFlag == BUTTON_ON) {
+    if (digitalRead(maruButton) == BUTTON_ON || digitalRead(batsuButton) == BUTTON_ON) {
       ButtonInit();
       LedInit();
     }
@@ -66,11 +66,41 @@ void LedOn(u1 ledNum){
 }
 
 void ButtonInit(){
-  buttonFlag == BUTTON_OFF;
+  buttonFlag = BUTTON_OFF;
+  pressedButtonIndex = 255;
 }
 
 void LedInit(){
-  for (u1 ledNum = 0; ledNum < ledCount; ledNum++){
-    digitalWrite(led[ledNum], LOW);
+  for (u1 i = 0; i < ledCount; i++) {
+    digitalWrite(led[i], HIGH);
+  }
+
+  delay(1500);
+
+  for (u1 i = 0; i < ledCount; i++) {
+    digitalWrite(led[i], LOW);
+  }
+}
+
+// ピンチェンジ割り込みハンドラ（D0～D7）
+ISR(PCINT2_vect) {
+  // 各ボタンの状態を調べる
+  for (u1 i = 0; i < buttonCount; i++) {
+    u1 pin = button[i];
+    u1 currentState = digitalRead(pin);
+
+    // 変化があって、押された瞬間（LOW）なら
+    if (((prevButtonState >> i) & 0x01) != currentState && currentState == BUTTON_ON) {
+      if (buttonFlag == BUTTON_OFF) {
+        pressedButtonIndex = i;
+      }
+    }
+
+    // 状態を更新
+    if (currentState == HIGH) {
+      prevButtonState |= (1 << i);
+    } else {
+      prevButtonState &= ~(1 << i);
+    }
   }
 }
