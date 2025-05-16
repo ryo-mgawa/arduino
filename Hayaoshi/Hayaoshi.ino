@@ -50,12 +50,14 @@ void loop() {
     LedOn(pressedButtonIndex);
   }
 
+  /*
   if (buttonFlag == BUTTON_ON) {
     if (digitalRead(maruButton) == BUTTON_ON || digitalRead(batsuButton) == BUTTON_ON) {
       ButtonInit();
       LedInit();
     }
   }
+  */
 
   delay(1);
 }
